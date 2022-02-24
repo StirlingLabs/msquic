@@ -54,6 +54,9 @@ message(STATUS "System version: ${CMAKE_SYSTEM_VERSION}")
 message(STATUS "Platform version: ${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
+set(QUIC_MAJOR_VERSION 2)
+set(QUIC_FULL_VERSION 2.0.0)
+
 if (WIN32)
     set(CX_PLATFORM "windows")
 elseif (APPLE)
@@ -75,9 +78,9 @@ else()
     set(QUIC_TLS "openssl" CACHE STRING "TLS Library to use")
 endif()
 
-option(QUIC_BUILD_TOOLS "Builds the tools code" ON)
-option(QUIC_BUILD_TEST "Builds the test code" ON)
-option(QUIC_BUILD_PERF "Builds the perf code" ON)
+option(QUIC_BUILD_TOOLS "Builds the tools code" OFF)
+option(QUIC_BUILD_TEST "Builds the test code" OFF)
+option(QUIC_BUILD_PERF "Builds the perf code" OFF)
 option(QUIC_BUILD_SHARED "Builds msquic as a dynamic library" ON)
 option(QUIC_ENABLE_LOGGING "Enables logging" OFF)
 option(QUIC_ENABLE_SANITIZERS "Enables sanitizers" OFF)
@@ -94,6 +97,8 @@ option(QUIC_SKIP_CI_CHECKS "Disable CI specific build checks" OFF)
 option(QUIC_TELEMETRY_ASSERTS "Enable telemetry asserts in release builds" OFF)
 option(QUIC_USE_SYSTEM_LIBCRYPTO "Use system libcrypto if openssl TLS" OFF)
 option(QUIC_HIGH_RES_TIMERS "Configure the system to use high resolution timers" OFF)
+option(QUIC_SHARED_EC "Use shared execution contexts between QUIC and UDP" OFF)
+option(QUIC_USE_XDP "Uses XDP instead of socket APIs" OFF)
 option(QUIC_DISABLE_POSIX_GSO "Disable GSO for systems that say they support it but don't" OFF)
 set(QUIC_FOLDER_PREFIX "" CACHE STRING "Optional prefix for source group folders when using an IDE generator")
 set(QUIC_LIBRARY_NAME "msquic" CACHE STRING "Override the output library name")
@@ -278,6 +283,14 @@ endif()
 
 if(QUIC_HIGH_RES_TIMERS)
     list(APPEND QUIC_COMMON_DEFINES QUIC_HIGH_RES_TIMERS=1)
+endif()
+
+if(QUIC_SHARED_EC)
+    list(APPEND QUIC_COMMON_DEFINES QUIC_USE_EXECUTION_CONTEXTS=1)
+endif()
+
+if(QUIC_USE_XDP)
+    list(APPEND QUIC_COMMON_DEFINES QUIC_USE_EXECUTION_CONTEXTS=1 QUIC_USE_RAW_DATAPATH=1)
 endif()
 
 if(QUIC_TLS STREQUAL "schannel")
@@ -552,9 +565,11 @@ if(QUIC_CODE_CHECK)
         message(STATUS "Found clang-tidy: ${CLANGTIDY}")
         set(CLANG_TIDY_CHECKS *
             # add checks to ignore here:
-            -altera-struct-pack-align
+            -altera-*
             -android-cloexec-fopen
             -android-cloexec-socket
+            -bugprone-easily-swappable-parameters
+            -bugprone-implicit-widening-of-multiplication-result
             -bugprone-macro-parentheses
             -bugprone-narrowing-conversions
             -bugprone-reserved-identifier
@@ -591,10 +606,10 @@ if(QUIC_CODE_CHECK)
         message(STATUS "Found cppcheck: ${CPPCHECK}")
         set(CMAKE_C_CPPCHECK_AVAILABLE ${CPPCHECK} -q --inline-suppr
             --suppress=duplicateValueTernary --suppress=objectIndex
-            --suppress=varFuncNullUB
+            --suppress=varFuncNullUB --suppress=constParameter
             # these are finding potential logic issues, may want to suppress when focusing on nits:
             --suppress=nullPointer --suppress=nullPointerRedundantCheck
-            --suppress=knownConditionTrueFalse
+            --suppress=knownConditionTrueFalse --suppress=invalidscanf
             --enable=warning,style,performance,portability -D__linux__)
     else()
         message(STATUS "cppcheck not found")

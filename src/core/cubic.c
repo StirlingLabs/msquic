@@ -260,7 +260,9 @@ CubicCongestionControlOnCongestionEvent(
             "[conn][%p] Persistent congestion event",
             Connection);
         Connection->Stats.Send.PersistentCongestionCount++;
-
+#ifdef QUIC_USE_RAW_DATAPATH
+        Connection->Paths[0].Route.State = RouteSuspected;
+#endif
         Cubic->IsInPersistentCongestion = TRUE;
         Cubic->WindowMax =
         Cubic->WindowLastMax =
@@ -676,7 +678,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 void
 CubicCongestionControlInitialize(
     _In_ QUIC_CONGESTION_CONTROL* Cc,
-    _In_ const QUIC_SETTINGS* Settings
+    _In_ const QUIC_SETTINGS_INTERNAL* Settings
     )
 {
     *Cc = QuicCongestionControlCubic;

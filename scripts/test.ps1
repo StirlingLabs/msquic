@@ -64,6 +64,9 @@ This script runs the MsQuic tests.
 .Parameter ErrorsAsWarnings
     Treats all errors as warnings.
 
+.Parameter DuoNic
+    Uses DuoNic instead of loopback (DuoNic must already be installed via 'prepare-machine.ps1 -InstallDuoNic').
+
 .EXAMPLE
     test.ps1
 
@@ -154,7 +157,10 @@ param (
     [switch]$SkipUnitTests = $false,
 
     [Parameter(Mandatory = $false)]
-    [switch]$ErrorsAsWarnings = $false
+    [switch]$ErrorsAsWarnings = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DuoNic = $false
 )
 
 Set-StrictMode -Version 'Latest'
@@ -256,6 +262,9 @@ if (!(Test-Path $PfxFile)) {
 # Build up all the arguments to pass to the Powershell script.
 $TestArguments =  "-IsolationMode $IsolationMode -PfxPath $PfxFile"
 
+if ($DuoNic) {
+    $TestArguments += " -DuoNic"
+}
 if ($Kernel) {
     $TestArguments += " -Kernel $KernelPath"
 }
@@ -305,12 +314,19 @@ if ($ErrorsAsWarnings) {
     $TestArguments += " -ErrorsAsWarnings"
 }
 
+if (![string]::IsNullOrWhiteSpace($ExtraArtifactDir)) {
+    $TestArguments += " -ExtraArtifactDir $ExtraArtifactDir"
+}
+
 # Run the script.
 if (!$Kernel -and !$SkipUnitTests) {
     Invoke-Expression ($RunTest + " -Path $MsQuicCoreTest " + $TestArguments)
     Invoke-Expression ($RunTest + " -Path $MsQuicPlatTest " + $TestArguments)
 }
-Invoke-Expression ($RunTest + " -Path $MsQuicTest " + $TestArguments)
+# TODO: fix main tests to run with XDP.
+if (!$DuoNic) {
+    Invoke-Expression ($RunTest + " -Path $MsQuicTest " + $TestArguments)
+}
 
 if ($CodeCoverage) {
     # Merge code coverage results

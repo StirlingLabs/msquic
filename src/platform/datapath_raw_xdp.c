@@ -77,7 +77,6 @@ typedef struct XDP_DATAPATH {
 
     // Constants
     DECLSPEC_CACHEALIGN
-    uint16_t DatapathCpuGroup;
     //
     // Currently, all XDP interfaces share the same config.
     //
@@ -366,10 +365,13 @@ Cleanup:
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
 CxPlatXdpReadConfig(
-    _Inout_ XDP_DATAPATH* Xdp
+    _Inout_ XDP_DATAPATH* Xdp,
+    _In_opt_ CXPLAT_DATAPATH_CONFIG* Config
     )
 {
-    // Default config
+    //
+    // Default config.
+    //
     Xdp->RxBufferCount = 4096;
     Xdp->RxRingSize = 128;
     Xdp->TxBufferCount = 4096;
@@ -377,6 +379,16 @@ CxPlatXdpReadConfig(
     Xdp->TxAlwaysPoke = FALSE;
     Xdp->Cpu = (uint16_t)(CxPlatProcMaxCount() - 1);
 
+    //
+    // Read user-specified global config.
+    //
+    if (Config != NULL && Config->RawDataPathProcList != NULL) {
+        Xdp->Cpu = Config->RawDataPathProcList[0];
+    }
+
+    //
+    // Read config from config file.
+    //
     FILE *File = fopen("xdp.ini", "r");
     if (File == NULL) {
         return;
@@ -393,11 +405,7 @@ CxPlatXdpReadConfig(
             Value[strlen(Value) - 1] = '\0';
         }
 
-        if (strcmp(Line, "CpuGroup") == 0) {
-             Xdp->DatapathCpuGroup = (uint16_t)strtoul(Value, NULL, 10);
-        } else if (strcmp(Line, "CpuNumber") == 0) {
-             Xdp->Cpu = (uint16_t)strtoul(Value, NULL, 10);
-        } else if (strcmp(Line, "RxBufferCount") == 0) {
+        if (strcmp(Line, "RxBufferCount") == 0) {
              Xdp->RxBufferCount = strtoul(Value, NULL, 10);
         } else if (strcmp(Line, "RxRingSize") == 0) {
              Xdp->RxRingSize = strtoul(Value, NULL, 10);
@@ -755,7 +763,7 @@ CxPlatDpRawInterfaceUpdateRules(
         .SubLayer = XDP_HOOK_INSPECT,
     };
 
-    const UINT32 Flags = 0; // TODO: support native/generic forced flags.
+    const UINT32 Flags = XDP_CREATE_PROGRAM_FLAG_SHARE; // TODO: support native/generic forced flags.
 
     for (uint32_t i = 0; i < Interface->QueueCount; i++) {
 
@@ -798,9 +806,10 @@ CxPlatDpRawInterfaceUpdateRules(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
-CxPlatDpRawInterfaceAddRule(
+CxPlatDpRawInterfaceAddRules(
     _In_ XDP_INTERFACE* Interface,
-    _In_ const XDP_RULE* NewRule
+    _In_reads_(Count) const XDP_RULE* Rules,
+    _In_ uint8_t Count
     )
 {
 #pragma warning(push)
@@ -809,7 +818,7 @@ CxPlatDpRawInterfaceAddRule(
     CxPlatLockAcquire(&Interface->RuleLock);
     // TODO - Don't always allocate a new array?
 
-    if (Interface->RuleCount + 1 == 0) {
+    if ((uint32_t)Interface->RuleCount + (uint32_t)Count > UINT8_MAX) {
         QuicTraceEvent(
             LibraryError,
             "[ lib] ERROR, %s.",
@@ -819,7 +828,7 @@ CxPlatDpRawInterfaceAddRule(
     }
 
     const size_t OldSize = sizeof(XDP_RULE) * (size_t)Interface->RuleCount;
-    const size_t NewSize = sizeof(XDP_RULE) * ((size_t)Interface->RuleCount + 1);
+    const size_t NewSize = sizeof(XDP_RULE) * ((size_t)Interface->RuleCount + Count);
 
     XDP_RULE* NewRules = CxPlatAlloc(NewSize, RULE_TAG);
     if (NewRules == NULL) {
@@ -835,8 +844,9 @@ CxPlatDpRawInterfaceAddRule(
     if (Interface->RuleCount > 0) {
         memcpy(NewRules, Interface->Rules, OldSize);
     }
-    NewRules[Interface->RuleCount] = *NewRule;
-    Interface->RuleCount++;
+    for (uint8_t i = 0; i < Count; i++) {
+        NewRules[Interface->RuleCount++] = Rules[i];
+    }
 
     if (Interface->Rules != NULL) {
         CxPlatFree(Interface->Rules, RULE_TAG);
@@ -852,46 +862,62 @@ CxPlatDpRawInterfaceAddRule(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
-CxPlatDpRawInterfaceRemoveRule(
+CxPlatDpRawInterfaceRemoveRules(
     _In_ XDP_INTERFACE* Interface,
-    _In_ const XDP_RULE* Rule
+    _In_reads_(Count) const XDP_RULE* Rules,
+    _In_ uint8_t Count
     )
 {
     CxPlatLockAcquire(&Interface->RuleLock);
 
-    for (uint8_t i = 0; i < Interface->RuleCount; i++) {
-        if (Interface->Rules[i].Match != Rule->Match) {
-            continue;
-        }
+    BOOLEAN UpdateRules = FALSE;
 
-        if (Rule->Match == XDP_MATCH_UDP_DST) {
-            if (Rule->Pattern.Port != Interface->Rules[i].Pattern.Port) {
+    for (uint8_t j = 0; j < Count; j++) {
+        for (uint8_t i = 0; i < Interface->RuleCount; i++) {
+            if (Interface->Rules[i].Match != Rules[j].Match) {
                 continue;
             }
-        } else if (Rule->Match == XDP_MATCH_IPV4_UDP_TUPLE) {
-            if (Rule->Pattern.Tuple.DestinationPort != Interface->Rules[i].Pattern.Tuple.DestinationPort ||
-                Rule->Pattern.Tuple.SourcePort != Interface->Rules[i].Pattern.Tuple.SourcePort ||
-                memcmp(&Rule->Pattern.Tuple.DestinationAddress.Ipv4, &Interface->Rules[i].Pattern.Tuple.DestinationAddress.Ipv4, sizeof(IN_ADDR)) != 0 ||
-                memcmp(&Rule->Pattern.Tuple.SourceAddress.Ipv4, &Interface->Rules[i].Pattern.Tuple.SourceAddress.Ipv4, sizeof(IN_ADDR)) != 0) {
-                continue;
-            }
-        } else if (Rule->Match == XDP_MATCH_IPV6_UDP_TUPLE) {
-            if (Rule->Pattern.Tuple.DestinationPort != Interface->Rules[i].Pattern.Tuple.DestinationPort ||
-                Rule->Pattern.Tuple.SourcePort != Interface->Rules[i].Pattern.Tuple.SourcePort ||
-                memcmp(&Rule->Pattern.Tuple.DestinationAddress.Ipv6, &Interface->Rules[i].Pattern.Tuple.DestinationAddress.Ipv6, sizeof(IN6_ADDR)) != 0 ||
-                memcmp(&Rule->Pattern.Tuple.SourceAddress.Ipv6, &Interface->Rules[i].Pattern.Tuple.SourceAddress.Ipv6, sizeof(IN6_ADDR)) != 0) {
-                continue;
-            }
-        } else {
-            CXPLAT_FRE_ASSERT(FALSE); // Should not be possible!
-        }
 
-        if (i < Interface->RuleCount - 1) {
-            memmove(&Interface->Rules[i], &Interface->Rules[i + 1], sizeof(XDP_RULE) * (Interface->RuleCount - i - 1));
+            if (Rules[j].Match == XDP_MATCH_UDP_DST) {
+                if (Rules[j].Pattern.Port != Interface->Rules[i].Pattern.Port) {
+                    continue;
+                }
+            } else if (Rules[j].Match == XDP_MATCH_QUIC_FLOW_SRC_CID || Rules[j].Match == XDP_MATCH_QUIC_FLOW_DST_CID) {
+                if (Rules[j].Pattern.QuicFlow.UdpPort != Interface->Rules[i].Pattern.QuicFlow.UdpPort ||
+                    Rules[j].Pattern.QuicFlow.CidLength != Interface->Rules[i].Pattern.QuicFlow.CidLength ||
+                    Rules[j].Pattern.QuicFlow.CidOffset != Interface->Rules[i].Pattern.QuicFlow.CidOffset ||
+                    memcmp(Rules[j].Pattern.QuicFlow.CidData, Interface->Rules[i].Pattern.QuicFlow.CidData, Rules[j].Pattern.QuicFlow.CidLength) != 0) {
+                    continue;
+                }
+            } else if (Rules[j].Match == XDP_MATCH_IPV4_UDP_TUPLE) {
+                if (Rules[j].Pattern.Tuple.DestinationPort != Interface->Rules[i].Pattern.Tuple.DestinationPort ||
+                    Rules[j].Pattern.Tuple.SourcePort != Interface->Rules[i].Pattern.Tuple.SourcePort ||
+                    memcmp(&Rules[j].Pattern.Tuple.DestinationAddress.Ipv4, &Interface->Rules[i].Pattern.Tuple.DestinationAddress.Ipv4, sizeof(IN_ADDR)) != 0 ||
+                    memcmp(&Rules[j].Pattern.Tuple.SourceAddress.Ipv4, &Interface->Rules[i].Pattern.Tuple.SourceAddress.Ipv4, sizeof(IN_ADDR)) != 0) {
+                    continue;
+                }
+            } else if (Rules[j].Match == XDP_MATCH_IPV6_UDP_TUPLE) {
+                if (Rules[j].Pattern.Tuple.DestinationPort != Interface->Rules[i].Pattern.Tuple.DestinationPort ||
+                    Rules[j].Pattern.Tuple.SourcePort != Interface->Rules[i].Pattern.Tuple.SourcePort ||
+                    memcmp(&Rules[j].Pattern.Tuple.DestinationAddress.Ipv6, &Interface->Rules[i].Pattern.Tuple.DestinationAddress.Ipv6, sizeof(IN6_ADDR)) != 0 ||
+                    memcmp(&Rules[j].Pattern.Tuple.SourceAddress.Ipv6, &Interface->Rules[i].Pattern.Tuple.SourceAddress.Ipv6, sizeof(IN6_ADDR)) != 0) {
+                    continue;
+                }
+            } else {
+                CXPLAT_FRE_ASSERT(FALSE); // Should not be possible!
+            }
+
+            if (i < Interface->RuleCount - 1) {
+                memmove(&Interface->Rules[i], &Interface->Rules[i + 1], sizeof(XDP_RULE) * (Interface->RuleCount - i - 1));
+            }
+            Interface->RuleCount--;
+            UpdateRules = TRUE;
+            break;
         }
-        Interface->RuleCount--;
+    }
+
+    if (UpdateRules) {
         CxPlatDpRawInterfaceUpdateRules(Interface);
-        break;
     }
 
     CxPlatLockRelease(&Interface->RuleLock);
@@ -901,13 +927,14 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
 QUIC_STATUS
 CxPlatDpRawInitialize(
     _Inout_ CXPLAT_DATAPATH* Datapath,
-    _In_ uint32_t ClientRecvContextLength
+    _In_ uint32_t ClientRecvContextLength,
+    _In_opt_ CXPLAT_DATAPATH_CONFIG* Config
     )
 {
     XDP_DATAPATH* Xdp = (XDP_DATAPATH*)Datapath;
     QUIC_STATUS Status;
 
-    CxPlatXdpReadConfig(Xdp);
+    CxPlatXdpReadConfig(Xdp, Config);
     CxPlatDpRawGenerateCpuTable(Datapath);
     CxPlatListInitializeHead(&Xdp->Interfaces);
 
@@ -1052,21 +1079,57 @@ CxPlatDpRawPlumbRulesOnSocket(
     XDP_DATAPATH* Xdp = (XDP_DATAPATH*)Socket->Datapath;
 
     if (Socket->Wildcard) {
-        const XDP_RULE Rule = {
-            .Match = XDP_MATCH_UDP_DST,
-            .Pattern.Port = Socket->LocalAddress.Ipv4.sin_port,
-            .Action = XDP_PROGRAM_ACTION_REDIRECT,
-            .Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK,
-            .Redirect.Target = NULL,
-        };
 
-        CXPLAT_LIST_ENTRY* Entry;
-        for (Entry = Xdp->Interfaces.Flink; Entry != &Xdp->Interfaces; Entry = Entry->Flink) {
-            XDP_INTERFACE* Interface = CONTAINING_RECORD(Entry, XDP_INTERFACE, Link);
-            if (IsCreated) {
-                CxPlatDpRawInterfaceAddRule(Interface, &Rule);
-            } else {
-                CxPlatDpRawInterfaceRemoveRule(Interface, &Rule);
+        if (Socket->CibirIdLength) {
+            XDP_RULE Rules[] = {
+                {
+                .Match = XDP_MATCH_QUIC_FLOW_SRC_CID,
+                .Pattern.QuicFlow.UdpPort = Socket->LocalAddress.Ipv4.sin_port,
+                .Pattern.QuicFlow.CidLength = Socket->CibirIdLength,
+                .Pattern.QuicFlow.CidOffset = Socket->CibirIdOffsetSrc,
+                .Action = XDP_PROGRAM_ACTION_REDIRECT,
+                .Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK,
+                .Redirect.Target = NULL,
+                },
+                {
+                .Match = XDP_MATCH_QUIC_FLOW_DST_CID,
+                .Pattern.QuicFlow.UdpPort = Socket->LocalAddress.Ipv4.sin_port,
+                .Pattern.QuicFlow.CidLength = Socket->CibirIdLength,
+                .Pattern.QuicFlow.CidOffset = Socket->CibirIdOffsetDst,
+                .Action = XDP_PROGRAM_ACTION_REDIRECT,
+                .Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK,
+                .Redirect.Target = NULL,
+                }
+            };
+            memcpy(Rules[0].Pattern.QuicFlow.CidData, Socket->CibirId, Socket->CibirIdLength);
+            memcpy(Rules[1].Pattern.QuicFlow.CidData, Socket->CibirId, Socket->CibirIdLength);
+
+            CXPLAT_LIST_ENTRY* Entry;
+            for (Entry = Xdp->Interfaces.Flink; Entry != &Xdp->Interfaces; Entry = Entry->Flink) {
+                XDP_INTERFACE* Interface = CONTAINING_RECORD(Entry, XDP_INTERFACE, Link);
+                if (IsCreated) {
+                    CxPlatDpRawInterfaceAddRules(Interface, Rules, 2);
+                } else {
+                    CxPlatDpRawInterfaceRemoveRules(Interface, Rules, 2);
+                }
+            }
+        } else {
+            const XDP_RULE Rule = {
+                .Match = XDP_MATCH_UDP_DST,
+                .Pattern.Port = Socket->LocalAddress.Ipv4.sin_port,
+                .Action = XDP_PROGRAM_ACTION_REDIRECT,
+                .Redirect.TargetType = XDP_REDIRECT_TARGET_TYPE_XSK,
+                .Redirect.Target = NULL,
+            };
+
+            CXPLAT_LIST_ENTRY* Entry;
+            for (Entry = Xdp->Interfaces.Flink; Entry != &Xdp->Interfaces; Entry = Entry->Flink) {
+                XDP_INTERFACE* Interface = CONTAINING_RECORD(Entry, XDP_INTERFACE, Link);
+                if (IsCreated) {
+                    CxPlatDpRawInterfaceAddRules(Interface, &Rule, 1);
+                } else {
+                    CxPlatDpRawInterfaceRemoveRules(Interface, &Rule, 1);
+                }
             }
         }
 
@@ -1098,9 +1161,9 @@ CxPlatDpRawPlumbRulesOnSocket(
         for (Entry = Xdp->Interfaces.Flink; Entry != &Xdp->Interfaces; Entry = Entry->Flink) {
             XDP_INTERFACE* Interface = CONTAINING_RECORD(Entry, XDP_INTERFACE, Link);
             if (IsCreated) {
-                CxPlatDpRawInterfaceAddRule(Interface, &Rule);
+                CxPlatDpRawInterfaceAddRules(Interface, &Rule, 1);
             } else {
-                CxPlatDpRawInterfaceRemoveRule(Interface, &Rule);
+                CxPlatDpRawInterfaceRemoveRules(Interface, &Rule, 1);
             }
         }
     }
@@ -1157,6 +1220,13 @@ CxPlatXdpRx(
             (CXPLAT_RECV_DATA*)Packet,
             FrameBuffer,
             (uint16_t)Buffer->length);
+
+        //
+        // The route has been filled in with the packet's src/dst IP and ETH addresses, so
+        // mark it resolved. This allows stateless sends to be issued without performing
+        // a route lookup.
+        //
+        Packet->Route->State = RouteResolved;
 
         if (Packet->Buffer) {
             Packet->Allocated = TRUE;
@@ -1247,7 +1317,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 CXPLAT_SEND_DATA*
 CxPlatDpRawTxAlloc(
     _In_ CXPLAT_DATAPATH* Datapath,
-    _In_ CXPLAT_ECN_TYPE ECN, // unused currently
+    _In_ CXPLAT_ECN_TYPE ECN,
     _In_ uint16_t MaxPacketSize,
     _Inout_ CXPLAT_ROUTE* Route
     )
@@ -1256,7 +1326,6 @@ CxPlatDpRawTxAlloc(
     XDP_QUEUE* Queue = Route->Queue;
     XDP_TX_PACKET* Packet = (XDP_TX_PACKET*)InterlockedPopEntrySList(&Queue->TxPool);
 
-    UNREFERENCED_PARAMETER(ECN);
     UNREFERENCED_PARAMETER(Datapath);
 
     if (Packet) {
@@ -1265,6 +1334,7 @@ CxPlatDpRawTxAlloc(
         Packet->Queue = Queue;
         Packet->Buffer.Length = MaxPacketSize;
         Packet->Buffer.Buffer = &Packet->FrameBuffer[HeaderBackfill.AllLayer];
+        Packet->ECN = ECN;
     }
 
     return (CXPLAT_SEND_DATA*)Packet;

@@ -833,9 +833,9 @@ QuicBindingProcessStatelessOperation(
 
         const uint32_t* SupportedVersions;
         uint32_t SupportedVersionsLength;
-        if (MsQuicLib.Settings.IsSet.DesiredVersionsList) {
-            SupportedVersions = MsQuicLib.Settings.DesiredVersionsList;
-            SupportedVersionsLength = MsQuicLib.Settings.DesiredVersionsListLength;
+        if (MsQuicLib.Settings.IsSet.VersionSettings) {
+            SupportedVersions = MsQuicLib.Settings.VersionSettings->OfferedVersions;
+            SupportedVersionsLength = MsQuicLib.Settings.VersionSettings->OfferedVersionsLength;
         } else {
             SupportedVersions = DefaultSupportedVersionsList;
             SupportedVersionsLength = ARRAYSIZE(DefaultSupportedVersionsList);
@@ -988,12 +988,13 @@ QuicBindingProcessStatelessOperation(
             goto Exit;
         }
 
-        uint8_t NewDestCid[MSQUIC_CID_MAX_LENGTH];
+        uint8_t NewDestCid[QUIC_CID_MAX_LENGTH];
         CXPLAT_DBG_ASSERT(sizeof(NewDestCid) >= MsQuicLib.CidTotalLength);
         CxPlatRandom(sizeof(NewDestCid), NewDestCid);
 
-        QUIC_RETRY_TOKEN_CONTENTS Token = { 0 };
-        Token.Authenticated.Timestamp = CxPlatTimeEpochMs64();
+        QUIC_TOKEN_CONTENTS Token = { 0 };
+        Token.Authenticated.Timestamp = (uint64_t)CxPlatTimeEpochMs64();
+        Token.Authenticated.IsNewToken = FALSE;
 
         Token.Encrypted.RemoteAddress = RecvDatagram->Route->RemoteAddress;
         CxPlatCopyMemory(Token.Encrypted.OrigConnId, RecvPacket->DestCid, RecvPacket->DestCidLen);
@@ -1238,14 +1239,18 @@ QuicBindingShouldRetryConnection(
 
     if (TokenLength != 0) {
         //
-        // Must always validate the token when provided by the client.
+        // Must always validate the token when provided by the client. Failure
+        // to validate retry tokens is fatal. Failure to validate NEW_TOKEN
+        // tokens is not.
         //
-        if (QuicPacketValidateRetryToken(Binding, Packet, TokenLength, Token)) {
+        if (QuicPacketValidateInitialToken(
+                Binding, Packet, TokenLength, Token, DropPacket)) {
             Packet->ValidToken = TRUE;
-        } else {
-            *DropPacket = TRUE;
+            return FALSE;
         }
-        return FALSE;
+        if (*DropPacket) {
+            return FALSE;
+        }
     }
 
     uint64_t CurrentMemoryLimit =

@@ -84,8 +84,11 @@ PrintHelp(
         "Server: secnetperf [options]\n"
         "\n"
         "  -bind:<addr>                A local IP address to bind to.\n"
+        "  -cibir:<hex_bytes>          A CIBIR well-known idenfitier.\n"
         "\n"
         "Client: secnetperf -TestName:<Throughput|RPS|HPS> [options]\n"
+        "Both:\n"
+        "  -cpu:<cpu_index>            Specify a processor for raw datapath thread(s) to run on.\n"
         "\n"
         );
 }
@@ -127,7 +130,7 @@ QuicMainStart(
         DatapathUnreachable
     };
 
-    Status = CxPlatDataPathInitialize(0, &DatapathCallbacks, &TcpEngine::TcpCallbacks, &Datapath);
+    Status = CxPlatDataPathInitialize(0, &DatapathCallbacks, &TcpEngine::TcpCallbacks, nullptr, &Datapath);
     if (QUIC_FAILED(Status)) {
         WriteOutput("Datapath for shutdown failed to initialize: %d\n", Status);
         return Status;
@@ -172,6 +175,19 @@ QuicMainStart(
         Watchdog = nullptr;
         WriteOutput("MsQuic Failed To Initialize: %d\n", Status);
         return Status;
+    }
+
+    uint32_t RawDatapathCpu;
+    if (TryGetValue(argc, argv, "cpu", &RawDatapathCpu)) {
+        if (QUIC_FAILED(
+            MsQuic->SetParam(
+                nullptr,
+                QUIC_PARAM_GLOBAL_RAW_DATAPATH_PROCS,
+                sizeof(RawDatapathCpu),
+                &RawDatapathCpu))) {
+            WriteOutput("MsQuic Failed To Set Raw DataPath Procs %d\n", Status);
+            return Status;
+        }
     }
 
     if (ServerMode) {

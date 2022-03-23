@@ -98,29 +98,6 @@ TRACEPOINT_EVENT(CLOG_CONNECTION_C, ServerVersionInfoVersionMismatch,
 
 
 /*----------------------------------------------------------
-// Decoder Ring for ServerVersionInformationChosenVersionNotInOtherVerList
-// [conn][%p] Server Chosen Version is not in Server Other Versions list: 0x%x
-// QuicTraceLogConnError(
-                ServerVersionInformationChosenVersionNotInOtherVerList,
-                Connection,
-                "Server Chosen Version is not in Server Other Versions list: 0x%x",
-                ServerVI.ChosenVersion);
-// arg1 = arg1 = Connection = arg1
-// arg3 = arg3 = ServerVI.ChosenVersion = arg3
-----------------------------------------------------------*/
-TRACEPOINT_EVENT(CLOG_CONNECTION_C, ServerVersionInformationChosenVersionNotInOtherVerList,
-    TP_ARGS(
-        const void *, arg1,
-        unsigned int, arg3), 
-    TP_FIELDS(
-        ctf_integer_hex(uint64_t, arg1, arg1)
-        ctf_integer(unsigned int, arg3, arg3)
-    )
-)
-
-
-
-/*----------------------------------------------------------
 // Decoder Ring for ClientChosenVersionMismatchServerChosenVersion
 // [conn][%p] Client Chosen Version doesn't match Server Chosen Version: 0x%x vs. 0x%x
 // QuicTraceLogConnError(
@@ -174,10 +151,10 @@ TRACEPOINT_EVENT(CLOG_CONNECTION_C, ServerVersionInformationPreviousVersionIsCho
 // Decoder Ring for ServerVersionInformationPreviousVersionInOtherVerList
 // [conn][%p] Previous Client Version in Server Other Versions list: 0x%x
 // QuicTraceLogConnError(
-                        ServerVersionInformationPreviousVersionInOtherVerList,
-                        Connection,
-                        "Previous Client Version in Server Other Versions list: 0x%x",
-                        Connection->PreviousQuicVersion);
+                            ServerVersionInformationPreviousVersionInOtherVerList,
+                            Connection,
+                            "Previous Client Version in Server Other Versions list: 0x%x",
+                            Connection->PreviousQuicVersion);
 // arg1 = arg1 = Connection = arg1
 // arg3 = arg3 = Connection->PreviousQuicVersion = arg3
 ----------------------------------------------------------*/
@@ -871,6 +848,33 @@ TRACEPOINT_EVENT(CLOG_CONNECTION_C, LocalInterfaceSet,
     TP_FIELDS(
         ctf_integer_hex(uint64_t, arg1, arg1)
         ctf_integer(unsigned int, arg3, arg3)
+    )
+)
+
+
+
+/*----------------------------------------------------------
+// Decoder Ring for CibirIdSet
+// [conn][%p] CIBIR ID set (len %hhu, offset %hhu)
+// QuicTraceLogConnInfo(
+            CibirIdSet,
+            Connection,
+            "CIBIR ID set (len %hhu, offset %hhu)",
+            Connection->CibirId[0],
+            Connection->CibirId[1]);
+// arg1 = arg1 = Connection = arg1
+// arg3 = arg3 = Connection->CibirId[0] = arg3
+// arg4 = arg4 = Connection->CibirId[1] = arg4
+----------------------------------------------------------*/
+TRACEPOINT_EVENT(CLOG_CONNECTION_C, CibirIdSet,
+    TP_ARGS(
+        const void *, arg1,
+        unsigned char, arg3,
+        unsigned char, arg4), 
+    TP_FIELDS(
+        ctf_integer_hex(uint64_t, arg1, arg1)
+        ctf_integer(unsigned char, arg3, arg3)
+        ctf_integer(unsigned char, arg4, arg4)
     )
 )
 

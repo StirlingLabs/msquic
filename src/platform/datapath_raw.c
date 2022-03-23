@@ -108,6 +108,7 @@ CxPlatDataPathInitialize(
     _In_ uint32_t ClientRecvContextLength,
     _In_opt_ const CXPLAT_UDP_DATAPATH_CALLBACKS* UdpCallbacks,
     _In_opt_ const CXPLAT_TCP_DATAPATH_CALLBACKS* TcpCallbacks,
+    _In_opt_ CXPLAT_DATAPATH_CONFIG* Config,
     _Out_ CXPLAT_DATAPATH** NewDataPath
     )
 {
@@ -116,6 +117,17 @@ CxPlatDataPathInitialize(
     CXPLAT_FRE_ASSERT(DatapathSize > sizeof(CXPLAT_DATAPATH));
 
     UNREFERENCED_PARAMETER(TcpCallbacks);
+
+    if (NewDataPath == NULL) {
+        Status = QUIC_STATUS_INVALID_PARAMETER;
+        goto Exit;
+    }
+    if (UdpCallbacks != NULL) {
+        if (UdpCallbacks->Receive == NULL || UdpCallbacks->Unreachable == NULL) {
+            Status = QUIC_STATUS_INVALID_PARAMETER;
+            goto Exit;
+        }
+    }
 
     *NewDataPath = CXPLAT_ALLOC_PAGED(DatapathSize, QUIC_POOL_DATAPATH);
     if (*NewDataPath == NULL) {
@@ -138,7 +150,7 @@ CxPlatDataPathInitialize(
         goto Error;
     }
 
-    Status = CxPlatDpRawInitialize(*NewDataPath, ClientRecvContextLength);
+    Status = CxPlatDpRawInitialize(*NewDataPath, ClientRecvContextLength, Config);
     if (QUIC_FAILED(Status)) {
         CxPlatSockPoolUninitialize(&(*NewDataPath)->SocketPool);
         goto Error;
@@ -157,6 +169,8 @@ Error:
             *NewDataPath = NULL;
         }
     }
+
+Exit:
 
     return Status;
 }
@@ -286,6 +300,12 @@ CxPlatSocketCreateUdp(
     CxPlatRundownInitialize(&(*NewSocket)->Rundown);
     (*NewSocket)->Datapath = Datapath;
     (*NewSocket)->CallbackContext = Config->CallbackContext;
+    (*NewSocket)->CibirIdLength = Config->CibirIdLength;
+    (*NewSocket)->CibirIdOffsetSrc = Config->CibirIdOffsetSrc;
+    (*NewSocket)->CibirIdOffsetDst = Config->CibirIdOffsetDst;
+    if (Config->CibirIdLength) {
+        memcpy((*NewSocket)->CibirId, Config->CibirId, Config->CibirIdLength);
+    }
 
     if (Config->RemoteAddress) {
         CXPLAT_FRE_ASSERT(!QuicAddrIsWildCard(Config->RemoteAddress));  // No wildcard remote addresses allowed.
@@ -534,7 +554,7 @@ CxPlatSocketSend(
     CXPLAT_DBG_ASSERT(Route->Queue != NULL);
     const CXPLAT_INTERFACE* Interface = CxPlatDpRawGetInterfaceFromQueue(Route->Queue);
     CxPlatFramingWriteHeaders(
-        Socket, Route, &SendData->Buffer,
+        Socket, Route, &SendData->Buffer, SendData->ECN,
         Interface->OffloadStatus.Transmit.NetworkLayerXsum,
         Interface->OffloadStatus.Transmit.TransportLayerXsum);
     CxPlatDpRawTxEnqueue(SendData);

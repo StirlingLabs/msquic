@@ -25,6 +25,11 @@ typedef struct QUIC_VERSION_INFO {
     //
     uint8_t RetryIntegritySecret[QUIC_VERSION_RETRY_INTEGRITY_SECRET_LENGTH];
 
+    //
+    // Labels used to derive different QUIC keys.
+    //
+    QUIC_HKDF_LABELS HkdfLabels;
+
 } QUIC_VERSION_INFO;
 
 //
@@ -285,12 +290,13 @@ QuicPacketDecodeRetryTokenV1(
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 BOOLEAN
-QuicPacketValidateRetryToken(
+QuicPacketValidateInitialToken(
     _In_ const void* const Owner,
     _In_ const CXPLAT_RECV_PACKET* const Packet,
-    _In_ uint16_t TokenLength,
+    _In_range_(>, 0) uint16_t TokenLength,
     _In_reads_(TokenLength)
-        const uint8_t* TokenBuffer
+        const uint8_t* TokenBuffer,
+    _Inout_ BOOLEAN* DropPacket
     );
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
@@ -464,13 +470,12 @@ QuicPacketEncodeLongHeaderV1(
 #define QuicPacketMaxBufferSizeForRetryV1() \
     MIN_RETRY_HEADER_LENGTH_V1 + \
     3 * QUIC_MAX_CONNECTION_ID_LENGTH_V1 + \
-    sizeof(QUIC_RETRY_TOKEN_CONTENTS)
+    sizeof(QUIC_TOKEN_CONTENTS)
 
 _IRQL_requires_max_(DISPATCH_LEVEL)
 QUIC_STATUS
 QuicPacketGenerateRetryIntegrity(
-    _In_reads_(QUIC_VERSION_RETRY_INTEGRITY_SECRET_LENGTH)
-        const uint8_t* IntegritySecret,
+    _In_ const QUIC_VERSION_INFO* Version,
     _In_ uint8_t OrigDestCidLength,
     _In_reads_(OrigDestCidLength) const uint8_t* const OrigDestCid,
     _In_ uint16_t BufferLength,

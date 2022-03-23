@@ -124,26 +124,6 @@ tracepoint(CLOG_CONNECTION_C, ServerVersionInfoVersionMismatch , arg1, arg3, arg
 
 
 /*----------------------------------------------------------
-// Decoder Ring for ServerVersionInformationChosenVersionNotInOtherVerList
-// [conn][%p] Server Chosen Version is not in Server Other Versions list: 0x%x
-// QuicTraceLogConnError(
-                ServerVersionInformationChosenVersionNotInOtherVerList,
-                Connection,
-                "Server Chosen Version is not in Server Other Versions list: 0x%x",
-                ServerVI.ChosenVersion);
-// arg1 = arg1 = Connection = arg1
-// arg3 = arg3 = ServerVI.ChosenVersion = arg3
-----------------------------------------------------------*/
-#ifndef _clog_4_ARGS_TRACE_ServerVersionInformationChosenVersionNotInOtherVerList
-#define _clog_4_ARGS_TRACE_ServerVersionInformationChosenVersionNotInOtherVerList(uniqueId, arg1, encoded_arg_string, arg3)\
-tracepoint(CLOG_CONNECTION_C, ServerVersionInformationChosenVersionNotInOtherVerList , arg1, arg3);\
-
-#endif
-
-
-
-
-/*----------------------------------------------------------
 // Decoder Ring for ClientChosenVersionMismatchServerChosenVersion
 // [conn][%p] Client Chosen Version doesn't match Server Chosen Version: 0x%x vs. 0x%x
 // QuicTraceLogConnError(
@@ -189,10 +169,10 @@ tracepoint(CLOG_CONNECTION_C, ServerVersionInformationPreviousVersionIsChosenVer
 // Decoder Ring for ServerVersionInformationPreviousVersionInOtherVerList
 // [conn][%p] Previous Client Version in Server Other Versions list: 0x%x
 // QuicTraceLogConnError(
-                        ServerVersionInformationPreviousVersionInOtherVerList,
-                        Connection,
-                        "Previous Client Version in Server Other Versions list: 0x%x",
-                        Connection->PreviousQuicVersion);
+                            ServerVersionInformationPreviousVersionInOtherVerList,
+                            Connection,
+                            "Previous Client Version in Server Other Versions list: 0x%x",
+                            Connection->PreviousQuicVersion);
 // arg1 = arg1 = Connection = arg1
 // arg3 = arg3 = Connection->PreviousQuicVersion = arg3
 ----------------------------------------------------------*/
@@ -812,6 +792,28 @@ tracepoint(CLOG_CONNECTION_C, UpdateStreamSchedulingScheme , arg1, arg3);\
 #ifndef _clog_4_ARGS_TRACE_LocalInterfaceSet
 #define _clog_4_ARGS_TRACE_LocalInterfaceSet(uniqueId, arg1, encoded_arg_string, arg3)\
 tracepoint(CLOG_CONNECTION_C, LocalInterfaceSet , arg1, arg3);\
+
+#endif
+
+
+
+
+/*----------------------------------------------------------
+// Decoder Ring for CibirIdSet
+// [conn][%p] CIBIR ID set (len %hhu, offset %hhu)
+// QuicTraceLogConnInfo(
+            CibirIdSet,
+            Connection,
+            "CIBIR ID set (len %hhu, offset %hhu)",
+            Connection->CibirId[0],
+            Connection->CibirId[1]);
+// arg1 = arg1 = Connection = arg1
+// arg3 = arg3 = Connection->CibirId[0] = arg3
+// arg4 = arg4 = Connection->CibirId[1] = arg4
+----------------------------------------------------------*/
+#ifndef _clog_5_ARGS_TRACE_CibirIdSet
+#define _clog_5_ARGS_TRACE_CibirIdSet(uniqueId, arg1, encoded_arg_string, arg3, arg4)\
+tracepoint(CLOG_CONNECTION_C, CibirIdSet , arg1, arg3, arg4);\
 
 #endif
 

@@ -95,7 +95,7 @@ param (
     [string]$ComputerName = "quic-server",
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet("Basic.Light", "Datapath.Light", "Datapath.Verbose", "Stacks.Light", "RPS.Light", "Performance.Light", "Basic.Verbose", "Performance.Light", "Performance.Verbose", "Full.Light", "Full.Verbose", "SpinQuic.Light", "None")]
+    [ValidateSet("Basic.Light", "Datapath.Light", "Datapath.Verbose", "Stacks.Light", "RPS.Light", "RPS.Verbose", "Performance.Light", "Basic.Verbose", "Performance.Light", "Performance.Verbose", "Full.Light", "Full.Verbose", "SpinQuic.Light", "None")]
     [string]$LogProfile = "None",
 
     [Parameter(Mandatory = $false)]
@@ -166,6 +166,11 @@ if (!$IsWindows) {
 
 if (!$IsWindows -and [string]::IsNullOrWhiteSpace($Remote)) {
     $Remote = "quic-server"
+}
+
+if ($PGO) {
+    # PGO makes things slower, so increase the timeout accordingly.
+    $Timeout = $Timeout * 5
 }
 
 # Root directory of the project.
@@ -249,7 +254,8 @@ Set-ScriptVariables -Local $Local `
                     -RemoteAddress $RemoteAddress `
                     -Session $Session `
                     -Kernel $Kernel `
-                    -FailOnRegression $FailOnRegression
+                    -FailOnRegression $FailOnRegression `
+                    -PGO $PGO
 
 $RemotePlatform = Invoke-TestCommand -Session $Session -ScriptBlock {
     if ($IsWindows) {
@@ -259,7 +265,7 @@ $RemotePlatform = Invoke-TestCommand -Session $Session -ScriptBlock {
     }
 }
 
-$OutputDir = Join-Path $RootDir "artifacts/PerfDataResults/$RemotePlatform/$($RemoteArch)_$($Config)_$($RemoteTls)"
+$OutputDir = Join-Path $RootDir "artifacts/PerfDataResults/$RemotePlatform/$($RemoteArch)_$($Config)_$($RemoteTls)$($ExtraArtifactDir)"
 New-Item -Path $OutputDir -ItemType Directory -Force | Out-Null
 
 $DebugFileName = $Local ? "DebugLogLocal.txt" : "DebugLog.txt"
@@ -279,7 +285,9 @@ $RemoteDirectorySMB = $null
 
 # Copy manifest and log script to local directory
 Copy-Item -Path (Join-Path $RootDir scripts log.ps1) -Destination $LocalDirectory
+Copy-Item -Path (Join-Path $RootDir scripts xdp-devkit.json) -Destination $LocalDirectory
 Copy-Item -Path (Join-Path $RootDir scripts prepare-machine.ps1) -Destination $LocalDirectory
+Copy-Item -Path (Join-Path $RootDir scripts xdp-devkit.json) -Destination $LocalDirectory
 Copy-Item -Path (Join-Path $RootDir src manifest MsQuic.wprp) -Destination $LocalDirectory
 
 if ($Local) {
@@ -411,6 +419,14 @@ function Invoke-Test {
         $RemoteArguments += " -stats:1"
     }
 
+    if ($LocalArguments.Contains("-exec:maxtput")) {
+        $RemoteArguments += " -exec:maxtput"
+    }
+
+    if ($LocalArguments.Contains("-exec:lowlat")) {
+        $RemoteArguments += " -exec:lowlat"
+    }
+
     if ($XDP) {
         $RemoteArguments += " -cpu:-1"
         $LocalArguments += " -cpu:-1"
@@ -464,7 +480,7 @@ function Invoke-Test {
             Write-LogAndDebug "Running Local: $LocalExe Args: $LocalArguments"
             $LocalResults = Invoke-LocalExe -Exe $LocalExe -RunArgs $LocalArguments -Timeout $Timeout -OutputDir $OutputDir
             Write-LogAndDebug $LocalResults
-            $AllLocalParsedResults = Get-TestResult -Results $LocalResults -Matcher $Test.ResultsMatcher
+            $AllLocalParsedResults = Get-TestResult -Results $LocalResults -Matcher $Test.ResultsMatcher -FailureDefault $Test.FailureDefault
             $AllRunsResults += $AllLocalParsedResults
             if ($PGO) {
                 # Merge client PGO Counts

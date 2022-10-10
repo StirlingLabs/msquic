@@ -6,13 +6,14 @@ $ProgressPreference = 'SilentlyContinue'
 
 function Set-ScriptVariables {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
-    param ($Local, $LocalTls, $LocalArch, $RemoteTls, $RemoteArch, $XDP, $Config, $Publish, $Record, $LogProfile, $RemoteAddress, $Session, $Kernel, $FailOnRegression)
+    param ($Local, $LocalTls, $LocalArch, $RemoteTls, $RemoteArch, $XDP, $Config, $Publish, $Record, $LogProfile, $RemoteAddress, $Session, $Kernel, $FailOnRegression, $PGO)
     $script:Local = $Local
     $script:LocalTls = $LocalTls
     $script:LocalArch = $LocalArch
     $script:RemoteTls = $RemoteTls
     $script:RemoteArch = $RemoteArch
     $script:XDP = $XDP
+    $script:PGO = $PGO
     $script:Config = $Config
     $script:Publish = $Publish
     $script:Record = $Record
@@ -254,13 +255,13 @@ function Get-CurrentBranch {
 function Get-ExePath {
     param ($PathRoot, $Platform, $IsRemote, $ExtraArtifactDir)
     if ($IsRemote) {
-        $ConfigStr = "$($RemoteArch)_$($Config)_$($RemoteTls)$ExtraArtifactDir"
+        $ConfigStr = "$($RemoteArch)_$($Config)_$($RemoteTls)$($ExtraArtifactDir)"
         return Invoke-TestCommand -Session $Session -ScriptBlock {
             param ($PathRoot, $Platform, $ConfigStr)
             Join-Path $PathRoot $Platform $ConfigStr
         } -ArgumentList $PathRoot, $Platform, $ConfigStr
     } else {
-        $ConfigStr = "$($LocalArch)_$($Config)_$($LocalTls)$ExtraArtifactDir"
+        $ConfigStr = "$($LocalArch)_$($Config)_$($LocalTls)$($ExtraArtifactDir)"
         return Join-Path $PathRoot $Platform $ConfigStr
     }
 }
@@ -273,13 +274,13 @@ function Get-ExeName {
     }
 
     if ($IsRemote) {
-        $ConfigStr = "$($RemoteArch)_$($Config)_$($RemoteTls)$ExtraArtifactDir"
+        $ConfigStr = "$($RemoteArch)_$($Config)_$($RemoteTls)$($ExtraArtifactDir)"
         return Invoke-TestCommand -Session $Session -ScriptBlock {
             param ($PathRoot, $Platform, $ConfigStr, $ExeName)
             Join-Path $PathRoot $Platform $ConfigStr $ExeName
         } -ArgumentList $PathRoot, $Platform, $ConfigStr, $ExeName
     } else {
-        $ConfigStr = "$($LocalArch)_$($Config)_$($LocalTls)$ExtraArtifactDir"
+        $ConfigStr = "$($LocalArch)_$($Config)_$($LocalTls)$($ExtraArtifactDir)"
         return Join-Path $PathRoot $Platform $ConfigStr $ExeName
     }
 }
@@ -604,12 +605,17 @@ function Get-MedianTestResults($FullResults) {
     }
 }
 
-function Get-TestResult($Results, $Matcher) {
+function Get-TestResult($Results, $Matcher, $FailureDefault) {
     $Found = $Results -match $Matcher
     if ($Found) {
         return $Matches
     } else {
-        Write-Error "Error Processing Results:`n`n$Results"
+        if([string]::IsNullOrWhiteSpace($FailureDefault)) {
+            Write-Error "Error Processing Results:`n`n$Results"
+        } else {
+            $Found = $FailureDefault -match $Matcher
+            return $Matches
+        }
     }
 }
 
@@ -1176,6 +1182,7 @@ class TestRunDefinition {
     [hashtable]$VariableValues;
     [boolean]$Loopback;
     [boolean]$AllowLoopback;
+    [string]$FailureDefault;
     [boolean]$XDP;
     [string[]]$Formats;
     [double]$RegressionThreshold;
@@ -1200,6 +1207,7 @@ class TestRunDefinition {
         $this.Formats = $existingDef.Formats
         $this.RegressionThreshold = $existingDef.RegressionThreshold
         $this.XDP = $script:XDP
+        $this.FailureDefault = $existingDef.FailureDefault
     }
 
     TestRunDefinition (
@@ -1214,6 +1222,7 @@ class TestRunDefinition {
         $this.AllowLoopback = $existingDef.AllowLoopback
         $this.Formats = $existingDef.Formats
         $this.RegressionThreshold = $existingDef.RegressionThreshold
+        $this.FailureDefault = $existingDef.FailureDefault
         $this.VariableValue = ""
         $this.VariableName = ""
 
@@ -1246,6 +1255,7 @@ class TestRunDefinition {
         $this.Formats = $existingDef.Formats
         $this.RegressionThreshold = $existingDef.RegressionThreshold
         $this.XDP = $script:XDP
+        $this.FailureDefault = $existingDef.FailureDefault
     }
 
     [string]ToString() {
@@ -1468,6 +1478,7 @@ class ExecutableSpec {
 class TestDefinition {
     [string]$TestName;
     [boolean]$SkipKernel;
+    [string]$FailureDefault;
     [ExecutableSpec]$Local;
     [VariableSpec[]]$Variables;
     [int]$Iterations;
@@ -1538,6 +1549,9 @@ function Test-CanRunTest {
         return $false
     }
     if ($script:XDP -and $Test.TestName.Contains("Tcp")) {
+        return $false
+    }
+    if ($script:PGO -and $Test.TestName.Contains("Tcp")) {
         return $false
     }
     return $true

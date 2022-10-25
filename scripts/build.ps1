@@ -24,6 +24,9 @@ This script provides helpers for building msquic.
 .PARAMETER DisableLogs
     Disables log collection.
 
+.PARAMETER LoggingType
+    Set logging type
+
 .PARAMETER SanitizeAddress
     Enables address sanitizer.
 
@@ -50,6 +53,9 @@ This script provides helpers for building msquic.
 
 .PARAMETER DynamicCRT
     Builds msquic with dynamic C runtime (Windows-only).
+
+.PARAMETER StaticCRT
+    Builds msquic with static C runtime (Windows-only).
 
 .PARAMETER PGO
     Builds msquic with profile guided optimization support (Windows-only).
@@ -137,6 +143,9 @@ param (
     [switch]$DisableLogs = $false,
 
     [Parameter(Mandatory = $false)]
+    [string]$LoggingType = "",
+
+    [Parameter(Mandatory = $false)]
     [switch]$SanitizeAddress = $false,
 
     [Parameter(Mandatory = $false)]
@@ -159,6 +168,9 @@ param (
 
     [Parameter(Mandatory = $false)]
     [switch]$DynamicCRT = $false,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$StaticCRT = $false,
 
     [Parameter(Mandatory = $false)]
     [switch]$PGO = $false,
@@ -393,6 +405,9 @@ function CMake-Generate {
     if (!$DisableLogs) {
         $Arguments += " -DQUIC_ENABLE_LOGGING=on"
     }
+    if ($LoggingType -ne "") {
+        $Arguments += " -DQUIC_ENABLE_LOGGING=on -DQUIC_LOGGING_TYPE=" + $LoggingType
+    }
     if ($SanitizeAddress) {
         $Arguments += " -DQUIC_ENABLE_SANITIZERS=on"
     }
@@ -417,8 +432,13 @@ function CMake-Generate {
         }
         $Arguments += " -DCMAKE_BUILD_TYPE=" + $ConfigToBuild
     }
-    if ($DynamicCRT) {
-        $Arguments += " -DQUIC_STATIC_LINK_CRT=off -DQUIC_STATIC_LINK_PARTIAL_CRT=off"
+    if ($IsWindows) {
+        if ($DynamicCRT) {
+            $Arguments += " -DQUIC_STATIC_LINK_CRT=off -DQUIC_STATIC_LINK_PARTIAL_CRT=off"
+        }
+        if ($StaticCRT) {
+            $Arguments += " -DQUIC_STATIC_LINK_CRT=on -DQUIC_STATIC_LINK_PARTIAL_CRT=off"
+        }
     }
     if ($PGO) {
         $Arguments += " -DQUIC_PGO=on"

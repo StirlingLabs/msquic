@@ -474,7 +474,12 @@ size_t QUIC_IOCTL_BUFFER_SIZES[] =
     0,
     0,
     0,
-    sizeof(QUIC_RUN_ODD_SIZE_VN_TP_PARAMS),
+    sizeof(QUIC_RUN_VN_TP_ODD_SIZE_PARAMS),
+    sizeof(UINT8),
+    sizeof(UINT8),
+    sizeof(UINT8),
+    sizeof(BOOLEAN),
+    sizeof(INT32),
 };
 
 CXPLAT_STATIC_ASSERT(
@@ -507,7 +512,9 @@ typedef union {
     QUIC_RUN_REBIND_PARAMS RebindParams;
     UINT8 RejectByClosing;
     QUIC_RUN_CIBIR_EXTENSION CibirParams;
-    QUIC_RUN_ODD_SIZE_VN_TP_PARAMS OddSizeVnTpParams;
+    QUIC_RUN_VN_TP_ODD_SIZE_PARAMS OddSizeVnTpParams;
+    UINT8 TestServerVNTP;
+    BOOLEAN Bidirectional;
 
 } QUIC_IOCTL_PARAMS;
 
@@ -1280,12 +1287,41 @@ QuicTestCtlEvtIoDeviceControl(
         QuicTestCtlRun(QuicTestChangeAlpn());
         break;
 
-    case IOCTL_QUIC_RUN_ODD_SIZE_VN_TP:
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    case IOCTL_QUIC_RUN_VN_TP_ODD_SIZE:
         CXPLAT_FRE_ASSERT(Params != nullptr);
         QuicTestCtlRun(
-            QuicTestOddSizeVNTP(
+            QuicTestVNTPOddSize(
                 Params->OddSizeVnTpParams.TestServer,
                 Params->OddSizeVnTpParams.VnTpSize));
+        break;
+
+    case IOCTL_QUIC_RUN_VN_TP_CHOSEN_VERSION_MISMATCH:
+        CXPLAT_FRE_ASSERT(Params != nullptr);
+        QuicTestCtlRun(
+            QuicTestVNTPChosenVersionMismatch(Params->TestServerVNTP != 0));
+        break;
+
+    case IOCTL_QUIC_RUN_VN_TP_CHOSEN_VERSION_ZERO:
+        CXPLAT_FRE_ASSERT(Params != nullptr);
+        QuicTestCtlRun(
+            QuicTestVNTPChosenVersionZero(Params->TestServerVNTP != 0));
+        break;
+
+    case IOCTL_QUIC_RUN_VN_TP_OTHER_VERSION_ZERO:
+        CXPLAT_FRE_ASSERT(Params != nullptr);
+        QuicTestCtlRun(
+            QuicTestVNTPOtherVersionZero(Params->TestServerVNTP != 0));
+        break;
+#endif
+    case IOCTL_QUIC_RUN_STREAM_BLOCK_UNBLOCK_CONN_FLOW_CONTROL:
+        CXPLAT_FRE_ASSERT(Params != nullptr);
+        QuicTestCtlRun(QuicTestStreamBlockUnblockConnFlowControl(Params->Bidirectional));
+        break;
+
+    case IOCTL_QUIC_RUN_ECN:
+        CXPLAT_FRE_ASSERT(Params != nullptr);
+        QuicTestCtlRun(QuicTestEcn(Params->Family));
         break;
 
     default:

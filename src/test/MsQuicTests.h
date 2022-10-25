@@ -295,9 +295,24 @@ QuicTestClientBlockedSourcePort(
 
 #ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
 void
-QuicTestOddSizeVNTP(
+QuicTestVNTPOddSize(
     _In_ bool TestServer,
     _In_ uint16_t VNTPSize
+    );
+
+void
+QuicTestVNTPChosenVersionMismatch(
+    _In_ bool TestServer
+    );
+
+void
+QuicTestVNTPChosenVersionZero(
+    _In_ bool TestServer
+    );
+
+void
+QuicTestVNTPOtherVersionZero(
+    _In_ bool TestServer
     );
 #endif
 
@@ -492,6 +507,16 @@ QuicTestStreamAbortRecvFinRace(
 
 void
 QuicTestStreamAbortConnFlowControl(
+    );
+
+void
+QuicTestStreamBlockUnblockConnFlowControl(
+    _In_ BOOLEAN Bidirectional
+    );
+
+void
+QuicTestEcn(
+    _In_ int Family
     );
 
 //
@@ -1109,9 +1134,24 @@ typedef struct {
 typedef struct {
     BOOLEAN TestServer;
     uint8_t VnTpSize;
-} QUIC_RUN_ODD_SIZE_VN_TP_PARAMS;
+} QUIC_RUN_VN_TP_ODD_SIZE_PARAMS;
 
-#define IOCTL_QUIC_RUN_ODD_SIZE_VN_TP \
+#define IOCTL_QUIC_RUN_VN_TP_ODD_SIZE \
     QUIC_CTL_CODE(103, METHOD_BUFFERED, FILE_WRITE_DATA)
 
-#define QUIC_MAX_IOCTL_FUNC_CODE 103
+#define IOCTL_QUIC_RUN_VN_TP_CHOSEN_VERSION_MISMATCH \
+    QUIC_CTL_CODE(104, METHOD_BUFFERED, FILE_WRITE_DATA)
+
+#define IOCTL_QUIC_RUN_VN_TP_CHOSEN_VERSION_ZERO \
+    QUIC_CTL_CODE(105, METHOD_BUFFERED, FILE_WRITE_DATA)
+
+#define IOCTL_QUIC_RUN_VN_TP_OTHER_VERSION_ZERO \
+    QUIC_CTL_CODE(106, METHOD_BUFFERED, FILE_WRITE_DATA)
+
+#define IOCTL_QUIC_RUN_STREAM_BLOCK_UNBLOCK_CONN_FLOW_CONTROL \
+    QUIC_CTL_CODE(107, METHOD_BUFFERED, FILE_WRITE_DATA)
+
+#define IOCTL_QUIC_RUN_ECN \
+    QUIC_CTL_CODE(108, METHOD_BUFFERED, FILE_WRITE_DATA)
+
+#define QUIC_MAX_IOCTL_FUNC_CODE 108
